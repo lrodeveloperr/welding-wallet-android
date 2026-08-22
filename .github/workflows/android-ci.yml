@@ -1,9 +1,6 @@
 name: Android · Workshop Pearl QA APK
 
 on:
-  push:
-    branches: ["**"]
-  pull_request:
   workflow_dispatch:
 
 permissions:
