@@ -2,8 +2,9 @@
 """Apply deterministic source fixes required by the pinned Android toolchain.
 
 The reviewed source is shared with iOS, while Android CI pins Flutter 3.44.8 and
-flutter_local_notifications 22.3.0. These edits are deliberately exact and
-fail closed so SDK/API drift cannot silently change production behavior.
+flutter_local_notifications 22.3.0. These edits are deliberately exact,
+idempotent, and fail closed so SDK/API drift cannot silently change production
+behavior.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from pathlib import Path
 
 
 def replace_exact(path: Path, old: str, new: str, label: str) -> None:
+    """Replace one reviewed source form, or accept an already-patched file."""
     text = path.read_text(encoding="utf-8")
     if new in text and old not in text:
         return
@@ -20,8 +22,9 @@ def replace_exact(path: Path, old: str, new: str, label: str) -> None:
     path.write_text(text.replace(old, new), encoding="utf-8")
 
 
-def main() -> None:
-    app = Path("lib/src/app.dart")
+def apply_android_review_fixes(root: Path = Path(".")) -> None:
+    """Apply every pinned Android compatibility fix beneath *root*."""
+    app = root / "lib/src/app.dart"
     replace_exact(
         app,
         "import 'package:intl/intl.dart';",
@@ -44,7 +47,7 @@ def main() -> None:
         "MaterialLocalizations time formatter",
     )
 
-    controller = Path("lib/src/app_controller.dart")
+    controller = root / "lib/src/app_controller.dart"
     replace_exact(
         controller,
         "await recovery.replaceCorruptStore(validated);",
@@ -60,7 +63,7 @@ def main() -> None:
         "corrupt-store clearing cast",
     )
 
-    reminders = Path("lib/src/reminders.dart")
+    reminders = root / "lib/src/reminders.dart"
     replace_exact(
         reminders,
         "    await _notifications.zonedSchedule(\n"
@@ -70,7 +73,7 @@ def main() -> None:
         "flutter_local_notifications v22 zonedSchedule signature",
     )
 
-    emergency = Path("lib/src/emergency_recovery.dart")
+    emergency = root / "lib/src/emergency_recovery.dart"
     replace_exact(
         emergency,
         "\u2068{locale}\u2069",
@@ -78,6 +81,9 @@ def main() -> None:
         "escaped Arabic bidi isolates",
     )
 
+
+def main() -> None:
+    apply_android_review_fixes()
     print("PASS: applied pinned Android source compatibility fixes")
 
 
