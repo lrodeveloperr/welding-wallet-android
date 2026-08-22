@@ -59,6 +59,20 @@ def apply_android_review_fixes(root: Path = Path(".")) -> None:
         "material.formatTimeOfDay(TimeOfDay.fromDateTime(local))",
         "MaterialLocalizations time formatter",
     )
+    replace_exact(
+        app,
+        "if (mounted && c.errorMessage == null) Navigator.pop(context);",
+        "if (context.mounted && c.errorMessage == null) {\n"
+        "      Navigator.pop(context);\n"
+        "    }",
+        "async BuildContext guard",
+    )
+    replace_exact(
+        app,
+        "RecordActionSheet",
+        "_RecordActionSheet",
+        "private record action sheet API",
+    )
 
     controller = root / "lib/src/app_controller.dart"
     replace_exact(
@@ -74,6 +88,14 @@ def apply_android_review_fixes(root: Path = Path(".")) -> None:
         "await (recovery as CorruptionRecoveryRepository)"
         ".clearCorruptStore(confirmed: true);",
         "corrupt-store clearing cast",
+    )
+    replace_exact(
+        controller,
+        "    final subscription = _storeUpdateSubscription;\n"
+        "    if (subscription != null) unawaited(subscription.cancel());",
+        "    unawaited(_storeUpdateSubscription?.cancel());\n"
+        "    _storeUpdateSubscription = null;",
+        "direct store subscription disposal",
     )
 
     reminders = root / "lib/src/reminders.dart"
