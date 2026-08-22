@@ -1,6 +1,7 @@
 name: Android · Workshop Pearl QA APK
 
 on:
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -72,7 +73,12 @@ jobs:
           ! rg -n "preview entitlement|fake billing|hard.?coded USD|com\\.google\\.firebase|firebase_analytics|appsflyer|adjust_sdk" lib pubspec.yaml
 
       - name: Unit and widget tests
-        run: flutter test --coverage --test-randomize-ordering-seed=random
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 300s flutter test --coverage \
+            --test-randomize-ordering-seed=random \
+            --reporter expanded
 
       - name: Build sideloadable QA APK
         run: flutter build apk --debug
