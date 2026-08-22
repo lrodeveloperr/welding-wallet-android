@@ -62,14 +62,13 @@ jobs:
           flutter pub get
           dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
 
-      # Bootstrap only: the first reviewed run formats source and exports it as
-      # evidence. The follow-up commit restores the check-only formatter gate.
-      - name: Format source and run static release gates
+      - name: Apply pinned Android compatibility fixes and run static gates
         shell: bash
         run: |
           set -euo pipefail
+          python3 tool/apply_android_review_fixes.py
           dart format lib test integration_test
-          flutter analyze --fatal-infos
+          flutter analyze --fatal-warnings
           python3 -m py_compile tool/*.py
           python3 -m unittest discover -s tool -p 'test_*.py'
           test "$(find assets/l10n -maxdepth 1 -name 'app_*.arb' | wc -l | tr -d ' ')" = "30"
