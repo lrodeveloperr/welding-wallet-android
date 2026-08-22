@@ -69,6 +69,19 @@ jobs:
           flutter pub get
           dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
 
+      - name: Apply pinned Android compatibility fixes and run release gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tool/apply_android_review_fixes.py
+          dart format lib test integration_test
+          flutter analyze --fatal-warnings
+          python3 -m py_compile tool/*.py
+          python3 -m unittest discover -s tool -p 'test_*.py'
+          test "$(find assets/l10n -maxdepth 1 -name 'app_*.arb' | wc -l | tr -d ' ')" = "30"
+          ! rg -n "preview entitlement|fake billing|hard.?coded USD|com\\.google\\.firebase|firebase_analytics|appsflyer|adjust_sdk" lib pubspec.yaml
+          flutter test --test-randomize-ordering-seed=random
+
       - name: Install protected upload signing
         shell: bash
         env:
@@ -87,13 +100,6 @@ jobs:
           storeFile=welding-upload.jks
           EOF
           python3 tool/configure_android_signing.py
-
-      - name: Re-run release gates
-        run: |
-          dart format --output=none --set-exit-if-changed lib test integration_test
-          flutter analyze --fatal-infos
-          python3 -m unittest discover -s tool -p 'test_*.py'
-          flutter test --test-randomize-ordering-seed=random
 
       - name: Build signed release AAB
         env:
@@ -130,6 +136,7 @@ jobs:
       - name: Create private release evidence
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p artifacts
           cp build/app/outputs/bundle/release/app-release.aab artifacts/Welding-Gas-Wallet-production.aab
           sha256sum artifacts/*.aab | tee artifacts/SHA256SUMS.txt
