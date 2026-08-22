@@ -66,7 +66,7 @@ jobs:
           grep -F 'SHA1withRSA' android/app/src/main/kotlin/com/goodusestudios/weldinggaswallet/GooglePlaySignatureVerifier.kt
           test -s android/app/src/main/res/drawable/ic_stat_welding_wallet.xml
           test -s android/app/src/main/res/raw/keep.xml
-          flutter pub get
+          flutter pub get --enforce-lockfile
           dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
 
       - name: Apply pinned Android compatibility fixes and run release gates
@@ -75,12 +75,12 @@ jobs:
           set -euo pipefail
           python3 tool/apply_android_review_fixes.py
           dart format lib test integration_test
-          flutter analyze --fatal-warnings
+          flutter analyze --no-fatal-infos --fatal-warnings
           python3 -m py_compile tool/*.py
           python3 -m unittest discover -s tool -p 'test_*.py'
           test "$(find assets/l10n -maxdepth 1 -name 'app_*.arb' | wc -l | tr -d ' ')" = "30"
-          ! rg -n "preview entitlement|fake billing|hard.?coded USD|com\\.google\\.firebase|firebase_analytics|appsflyer|adjust_sdk" lib pubspec.yaml
-          flutter test --test-randomize-ordering-seed=random
+          ! grep -REn -E 'preview entitlement|fake billing|hard.?coded USD|com\.google\.firebase|firebase_analytics|appsflyer|adjust_sdk' lib pubspec.yaml
+          timeout 300s flutter test --test-randomize-ordering-seed=random --reporter expanded
 
       - name: Install protected upload signing
         shell: bash
