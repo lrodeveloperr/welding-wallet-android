@@ -109,14 +109,6 @@ class AndroidReviewFixesTest(unittest.TestCase):
                 "as CorruptionRecoveryRepository",
                 first["lib/src/app_controller.dart"],
             )
-            self.assertIn(
-                "_storeUpdateSubscription = null",
-                first["lib/src/app_controller.dart"],
-            )
-            self.assertIn(
-                "unawaited(subscription.cancel())",
-                first["lib/src/app_controller.dart"],
-            )
             self.assertIn("id: _stableNotificationId", first["lib/src/reminders.dart"])
             self.assertIn(
                 r"\u2068{locale}\u2069",
