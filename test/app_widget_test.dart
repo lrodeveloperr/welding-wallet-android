@@ -16,21 +16,21 @@ void main() {
     final harness = WidgetHarness(onboarded: false);
     await harness.controller.bootstrap();
     await tester.pumpWidget(WeldingGasWalletApp(controller: harness.controller));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
 
     expect(find.text(harness.controller.t('welcomeTitle')), findsOneWidget);
     expect(find.text(harness.controller.t('welcomePointThree')), findsOneWidget);
     await tester.tap(find.text(harness.controller.t('continueAction')));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     expect(find.text(harness.controller.t('scopeTitle')), findsOneWidget);
     expect(find.text(harness.controller.t('privacyPolicy')), findsOneWidget);
     expect(find.text(harness.controller.t('termsOfUse')), findsOneWidget);
 
     await tester.tap(find.text(harness.controller.t('continueAction')));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     expect(find.text(harness.controller.t('setupTitle')), findsOneWidget);
     await tester.tap(find.text(harness.controller.t('getStarted')));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     expect(harness.controller.data!.settings.onboardingComplete, isTrue);
     expect(find.text(harness.controller.t('wallet')), findsWidgets);
   });
@@ -40,24 +40,24 @@ void main() {
     final harness = WidgetHarness(onboarded: false);
     await harness.controller.bootstrap();
     await tester.pumpWidget(WeldingGasWalletApp(controller: harness.controller));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
 
     await tester.tap(find.text(harness.controller.t('continueAction')));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     await tester.tap(find.text(harness.controller.t('continueAction')));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     await tester.tap(find.byKey(const ValueKey<String>('currency-picker')));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     await tester.enterText(
       find.byKey(const ValueKey<String>('currency-search')),
       'jpy',
     );
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     expect(find.byKey(const ValueKey<String>('currency-JPY')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey<String>('currency-JPY')));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     await tester.tap(find.text(harness.controller.t('getStarted')));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
 
     expect(harness.controller.data!.settings.currencyCode, 'JPY');
   });
@@ -67,15 +67,13 @@ void main() {
     final harness = WidgetHarness();
     await harness.controller.bootstrap();
     await tester.pumpWidget(WeldingGasWalletApp(controller: harness.controller));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await _pumpUi(tester);
 
     for (final key in <String>['wallet', 'activity', 'spend', 'settings']) {
       expect(find.text(harness.controller.t(key)), findsWidgets);
     }
     await tester.tap(find.text(harness.controller.t('settings')).first);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await _pumpUi(tester);
     expect(find.text(harness.controller.t('planAndAccess')), findsOneWidget);
     expect(find.text(harness.controller.t('dataAndBackup')), findsOneWidget);
     expect(find.text(harness.controller.t('privacyAndSafety')), findsOneWidget);
@@ -94,15 +92,15 @@ void main() {
       ));
     }
     await tester.pumpWidget(WeldingGasWalletApp(controller: harness.controller));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
 
     await tester.tap(find.text(harness.controller.t('addCylinder')).last);
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     final fields = find.byType(TextFormField);
     await tester.enterText(fields.at(0), 'Fourth oxygen');
     await tester.enterText(fields.at(1), 'Oxygen');
     await tester.tap(find.text(harness.controller.t('save')));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
 
     expect(harness.controller.data!.pendingDraft?.nickname, 'Fourth oxygen');
     expect(find.text(harness.controller.t('fourthReady')), findsOneWidget);
@@ -119,10 +117,10 @@ void main() {
     final harness = WidgetHarness();
     await harness.controller.bootstrap();
     await tester.pumpWidget(WeldingGasWalletApp(controller: harness.controller));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     expect(tester.takeException(), isNull);
     await tester.tap(find.text(harness.controller.t('addCylinder')).last);
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     final chip = find.byType(ChoiceChip).first;
     expect(tester.getSize(chip).height, greaterThanOrEqualTo(44));
   });
@@ -140,14 +138,14 @@ void main() {
     final harness = WidgetHarness();
     await harness.controller.bootstrap();
     await tester.pumpWidget(WeldingGasWalletApp(controller: harness.controller));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
 
     expect(tester.takeException(), isNull);
     final addAction = find.text(harness.controller.t('addCylinder')).last;
     expect(addAction, findsOneWidget);
     await tester.ensureVisible(addAction);
     await tester.tap(addAction);
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     expect(find.text(harness.controller.t('save')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -157,7 +155,7 @@ void main() {
     final harness = WidgetHarness(initialLocale: 'ar');
     await harness.controller.bootstrap();
     await tester.pumpWidget(WeldingGasWalletApp(controller: harness.controller));
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
 
     expect(harness.controller.strings!.locale, 'ar');
     expect(
@@ -168,7 +166,7 @@ void main() {
       expect(find.text(harness.controller.t(key)), findsWidgets);
     }
     await tester.tap(find.text(harness.controller.t('settings')).first);
-    await tester.pumpAndSettle();
+    await _pumpUi(tester);
     expect(find.text(harness.controller.t('planAndAccess')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -226,10 +224,16 @@ void main() {
     final harness = WidgetHarness();
     await harness.controller.bootstrap();
     await tester.pumpWidget(WeldingGasWalletApp(controller: harness.controller));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.byType(NavigationRail), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
   });
+}
+
+Future<void> _pumpUi(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 350));
 }
 
 class WidgetHarness {
