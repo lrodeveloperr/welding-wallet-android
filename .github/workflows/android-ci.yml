@@ -132,7 +132,7 @@ jobs:
           cp pubspec.lock artifacts/pubspec.lock 2>/dev/null || true
           cp apk-badging.txt apk-signature.txt artifacts/ 2>/dev/null || true
           cp android-debug-merged-manifest.xml artifacts/ 2>/dev/null || true
-          if [ -d android ]; then
+          if [ -d android ] && [ -s build/app/outputs/flutter-apk/app-debug.apk ]; then
             (cd android && ./gradlew app:dependencies --configuration debugRuntimeClasspath) \
               > artifacts/android-dependencies.txt 2>&1 || true
           fi
@@ -142,6 +142,7 @@ jobs:
           sha256sum artifacts/*.apk | tee artifacts/SHA256SUMS.txt || true
 
       - name: Upload QA APK and audit evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: Welding-Gas-Wallet-Android-QA-${{ github.run_number }}
