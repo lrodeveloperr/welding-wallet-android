@@ -17,12 +17,24 @@ class AndroidReviewFixesTest(unittest.TestCase):
             "import 'package:intl/intl.dart';\n"
             "      CylinderEventType.relationshipChanged => c.t('relationshipChanged'),\n"
             "      CylinderEventType.returned => c.t('eventReturned'),\n"
-            "material.formatTime(TimeOfDay.fromDateTime(local))\n",
+            "material.formatTime(TimeOfDay.fromDateTime(local))\n"
+            "  @override\n"
+            "  void dispose() {\n"
+            "    WidgetsBinding.instance.removeObserver(this);\n"
+            "    super.dispose();\n"
+            "  }\n",
             encoding="utf-8",
         )
         (source / "app_controller.dart").write_text(
             "await recovery.replaceCorruptStore(validated);\n"
-            "await recovery.clearCorruptStore(confirmed: true);\n",
+            "await recovery.clearCorruptStore(confirmed: true);\n"
+            "  Future<void> selectFreeEditable(Set<String> cylinderIds) async {\n"
+            "    await run<void>(() => engine.selectFreeEditable(\n"
+            "          cylinderIds,\n"
+            "          expectedRevision: data!.revision,\n"
+            "        ));\n"
+            "  }\n"
+            "}\n",
             encoding="utf-8",
         )
         (source / "reminders.dart").write_text(
@@ -92,8 +104,17 @@ class AndroidReviewFixesTest(unittest.TestCase):
                 first["lib/src/app.dart"],
             )
             self.assertIn("formatTimeOfDay", first["lib/src/app.dart"])
+            self.assertIn("widget.controller.dispose()", first["lib/src/app.dart"])
             self.assertIn(
                 "as CorruptionRecoveryRepository",
+                first["lib/src/app_controller.dart"],
+            )
+            self.assertIn(
+                "_storeUpdateSubscription = null",
+                first["lib/src/app_controller.dart"],
+            )
+            self.assertIn(
+                "unawaited(subscription.cancel())",
                 first["lib/src/app_controller.dart"],
             )
             self.assertIn("id: _stableNotificationId", first["lib/src/reminders.dart"])
