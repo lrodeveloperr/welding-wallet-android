@@ -39,6 +39,8 @@ const Map<String, String> localeNativeNames = <String, String>{
   'fil': 'Filipino',
 };
 
+final RegExp _placeholderPattern = RegExp(r'\{([A-Za-z][A-Za-z0-9_]*)\}');
+
 Locale flutterLocale(String code) {
   final canonical = canonicalLocale(code);
   final parts = canonical.split('-');
@@ -52,6 +54,40 @@ final List<Locale> flutterSupportedLocales =
 
 String _assetForLocale(String locale) =>
     'assets/l10n/app_${canonicalLocale(locale).replaceAll('-', '_')}.arb';
+
+Set<String> _placeholders(String value) => _placeholderPattern
+    .allMatches(value)
+    .map((match) => match.group(1)!)
+    .toSet();
+
+void _validateCatalog({
+  required String locale,
+  required Map<String, String> catalog,
+  required Map<String, String> english,
+}) {
+  final missing = english.keys.toSet().difference(catalog.keys.toSet());
+  final extra = catalog.keys.toSet().difference(english.keys.toSet());
+  if (missing.isNotEmpty || extra.isNotEmpty) {
+    throw FormatException(
+      'Catalog key mismatch: missing=${missing.length}, extra=${extra.length}.',
+    );
+  }
+
+  for (final key in english.keys) {
+    final translated = catalog[key]!;
+    if (translated.trim().isEmpty) {
+      throw FormatException('Catalog value is empty: $locale/$key.');
+    }
+    final expectedPlaceholders = _placeholders(english[key]!);
+    final actualPlaceholders = _placeholders(translated);
+    if (!setEquals(expectedPlaceholders, actualPlaceholders)) {
+      throw FormatException(
+        'Catalog placeholder mismatch: $locale/$key '
+        'expected=$expectedPlaceholders actual=$actualPlaceholders.',
+      );
+    }
+  }
+}
 
 class EmergencyRecoveryStrings {
   const EmergencyRecoveryStrings({
@@ -106,7 +142,10 @@ class AppStrings {
 
   bool get isRtl => isRtlLocale(locale);
 
-  String call(String key, [Map<String, Object?> values = const <String, Object?>{}]) {
+  String call(
+    String key, [
+    Map<String, Object?> values = const <String, Object?>{},
+  ]) {
     var result = _messages[key] ?? key;
     for (final entry in values.entries) {
       result = result.replaceAll('{${entry.key}}', entry.value.toString());
@@ -119,19 +158,14 @@ class AppStrings {
     final Map<String, String> english;
     try {
       english = await _readCatalog('assets/l10n/app_en.arb');
+      _validateCatalog(locale: 'en', catalog: english, english: english);
     } on Object catch (error) {
       throw LocalizationCatalogException('en', error);
     }
     if (locale == 'en') return AppStrings._('en', english);
     try {
       final translated = await _readCatalog(_assetForLocale(locale));
-      final missing = english.keys.toSet().difference(translated.keys.toSet());
-      final extra = translated.keys.toSet().difference(english.keys.toSet());
-      if (missing.isNotEmpty || extra.isNotEmpty) {
-        throw FormatException(
-          'Catalog key mismatch: missing=${missing.length}, extra=${extra.length}.',
-        );
-      }
+      _validateCatalog(locale: locale, catalog: translated, english: english);
       return AppStrings._(locale, translated);
     } on Object catch (error) {
       throw LocalizationCatalogException(locale, error);
@@ -162,5 +196,6 @@ class LocalizationCatalogException implements Exception {
   final Object cause;
 
   @override
-  String toString() => 'Localization catalog for $locale could not be loaded: $cause';
+  String toString() =>
+      'Localization catalog for $locale could not be loaded: $cause';
 }
