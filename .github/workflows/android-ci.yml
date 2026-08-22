@@ -1,0 +1,162 @@
+name: Android · Workshop Pearl QA APK
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: welding-wallet-android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.8"
+  APPLICATION_ID: com.goodusestudios.weldinggaswallet
+
+jobs:
+  test-build-and-install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up pinned Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Generate pinned Android host
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter create "$RUNNER_TEMP/weldinggaswallet_host" \
+            --platforms=android \
+            --org com.goodusestudios \
+            --project-name weldinggaswallet
+          cp -R "$RUNNER_TEMP/weldinggaswallet_host/android" ./android
+          rm -f android/local.properties
+          python3 tool/configure_hosts.py android
+          grep -F 'isCoreLibraryDesugaringEnabled = true' android/app/build.gradle.kts
+          grep -F 'com.android.tools:desugar_jdk_libs:2.1.4' android/app/build.gradle.kts
+          grep -F 'ScheduledNotificationBootReceiver' android/app/src/main/AndroidManifest.xml
+          grep -F 'play_signature' android/app/src/main/kotlin/com/goodusestudios/weldinggaswallet/MainActivity.kt
+          grep -F 'SHA1withRSA' android/app/src/main/kotlin/com/goodusestudios/weldinggaswallet/GooglePlaySignatureVerifier.kt
+          test -s android/app/src/main/res/drawable/ic_stat_welding_wallet.xml
+          test -s android/app/src/main/res/raw/keep.xml
+
+      - name: Resolve locked dependencies and generate launcher assets
+        run: |
+          flutter pub get
+          dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
+
+      - name: Apply pinned Android compatibility fixes and run static gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tool/apply_android_review_fixes.py
+          dart format lib test integration_test
+          flutter analyze --no-fatal-infos --fatal-warnings
+          python3 -m py_compile tool/*.py
+          python3 -m unittest discover -s tool -p 'test_*.py'
+          test "$(find assets/l10n -maxdepth 1 -name 'app_*.arb' | wc -l | tr -d ' ')" = "30"
+          ! grep -REn -E 'preview entitlement|fake billing|hard.?coded USD|com\.google\.firebase|firebase_analytics|appsflyer|adjust_sdk' lib pubspec.yaml
+
+      - name: Unit and widget tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 300s flutter test --coverage \
+            --test-randomize-ordering-seed=random \
+            --reporter expanded
+
+      - name: Build sideloadable QA APK
+        run: flutter build apk --debug
+
+      - name: Run Android-host Play signature fixtures
+        run: (cd android && ./gradlew testDebugUnitTest)
+
+      - name: Verify APK identity, target and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=build/app/outputs/flutter-apk/app-debug.apk
+          test -s "$APK"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -x "$AAPT" && test -x "$APKSIGNER"
+          "$AAPT" dump badging "$APK" | tee apk-badging.txt
+          grep -F "package: name='${APPLICATION_ID}'" apk-badging.txt
+          grep -F "targetSdkVersion:'36'" apk-badging.txt
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee apk-signature.txt
+
+      - name: Verify final merged permission surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          MERGED_MANIFEST="$(find build/app/intermediates -type f -name AndroidManifest.xml -path '*/debug/*' | sort | tail -1)"
+          test -n "$MERGED_MANIFEST" && test -s "$MERGED_MANIFEST"
+          python3 tool/verify_android_manifest.py "$MERGED_MANIFEST" --variant debug
+          cp "$MERGED_MANIFEST" android-debug-merged-manifest.xml
+
+      - name: Resolve Android emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            mkdir -p artifacts
+            adb install -r build/app/outputs/flutter-apk/app-debug.apk
+            test -s integration_test/app_end_to_end_test.dart
+            flutter test integration_test/app_end_to_end_test.dart -d emulator-5554
+            adb exec-out screencap -p > artifacts/android-e2e-final.png
+            test -s artifacts/android-e2e-final.png
+
+      - name: Create dependency and permission evidence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          flutter pub deps --json > artifacts/flutter-dependencies.json || true
+          cp pubspec.lock artifacts/pubspec.lock 2>/dev/null || true
+          cp apk-badging.txt apk-signature.txt artifacts/ 2>/dev/null || true
+          cp android-debug-merged-manifest.xml artifacts/ 2>/dev/null || true
+          if [ -d android ] && [ -s build/app/outputs/flutter-apk/app-debug.apk ]; then
+            (cd android && ./gradlew app:dependencies --configuration debugRuntimeClasspath) \
+              > artifacts/android-dependencies.txt 2>&1 || true
+          fi
+          cp build/app/outputs/flutter-apk/app-debug.apk \
+            "artifacts/Welding-Gas-Wallet-Workshop-Pearl-QA-${GITHUB_RUN_NUMBER}.apk" 2>/dev/null || true
+          tar -czf artifacts/formatted-source.tar.gz lib test integration_test
+          sha256sum artifacts/*.apk | tee artifacts/SHA256SUMS.txt || true
+
+      - name: Upload QA APK and audit evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Welding-Gas-Wallet-Android-QA-${{ github.run_number }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Welding-Gas-Wallet-Android-Coverage-${{ github.run_number }}
+          path: coverage/lcov.info
+          if-no-files-found: ignore
+          retention-days: 14

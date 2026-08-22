@@ -1,0 +1,159 @@
+name: Android · Signed production AAB
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type BUILD SIGNED AAB to continue from main
+        required: true
+        default: BUILD ONLY
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.44.8"
+  APPLICATION_ID: com.goodusestudios.weldinggaswallet
+
+jobs:
+  signed-store-bundle:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'BUILD SIGNED AAB'
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Require production revenue and signing material
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          EXPECTED_CERT_SHA256: ${{ secrets.ANDROID_UPLOAD_CERT_SHA256 }}
+          PLAY_LICENSE_KEY: ${{ secrets.WELDING_PLAY_LICENSE_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_B64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD EXPECTED_CERT_SHA256 PLAY_LICENSE_KEY; do
+            test -n "${!name:-}" || { echo "Missing required secret: $name"; exit 1; }
+          done
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Generate and configure Android host
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter create "$RUNNER_TEMP/weldinggaswallet_host" \
+            --platforms=android --org com.goodusestudios --project-name weldinggaswallet
+          cp -R "$RUNNER_TEMP/weldinggaswallet_host/android" ./android
+          rm -f android/local.properties
+          python3 tool/configure_hosts.py android
+          grep -F 'isCoreLibraryDesugaringEnabled = true' android/app/build.gradle.kts
+          grep -F 'com.android.tools:desugar_jdk_libs:2.1.4' android/app/build.gradle.kts
+          grep -F 'ScheduledNotificationBootReceiver' android/app/src/main/AndroidManifest.xml
+          grep -F 'play_signature' android/app/src/main/kotlin/com/goodusestudios/weldinggaswallet/MainActivity.kt
+          grep -F 'SHA1withRSA' android/app/src/main/kotlin/com/goodusestudios/weldinggaswallet/GooglePlaySignatureVerifier.kt
+          test -s android/app/src/main/res/drawable/ic_stat_welding_wallet.xml
+          test -s android/app/src/main/res/raw/keep.xml
+          flutter pub get
+          dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
+
+      - name: Apply pinned Android compatibility fixes and run release gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tool/apply_android_review_fixes.py
+          dart format lib test integration_test
+          flutter analyze --fatal-warnings
+          python3 -m py_compile tool/*.py
+          python3 -m unittest discover -s tool -p 'test_*.py'
+          test "$(find assets/l10n -maxdepth 1 -name 'app_*.arb' | wc -l | tr -d ' ')" = "30"
+          ! rg -n "preview entitlement|fake billing|hard.?coded USD|com\\.google\\.firebase|firebase_analytics|appsflyer|adjust_sdk" lib pubspec.yaml
+          flutter test --test-randomize-ordering-seed=random
+
+      - name: Install protected upload signing
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > android/app/welding-upload.jks
+          chmod 600 android/app/welding-upload.jks
+          cat > android/key.properties <<EOF
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=welding-upload.jks
+          EOF
+          python3 tool/configure_android_signing.py
+
+      - name: Build signed release AAB
+        env:
+          PLAY_LICENSE_KEY: ${{ secrets.WELDING_PLAY_LICENSE_KEY_BASE64 }}
+        run: >-
+          flutter build appbundle --release
+          --dart-define=PLAY_LICENSE_KEY_BASE64=$PLAY_LICENSE_KEY
+
+      - name: Run Android-host Play signature fixtures
+        run: (cd android && ./gradlew testDebugUnitTest)
+
+      - name: Verify bundle signature and certificate fingerprint
+        shell: bash
+        env:
+          EXPECTED_CERT_SHA256: ${{ secrets.ANDROID_UPLOAD_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          AAB=build/app/outputs/bundle/release/app-release.aab
+          test -s "$AAB"
+          jarsigner -verify -strict -verbose "$AAB" | tee aab-signature.txt
+          ACTUAL="$(keytool -printcert -jarfile "$AAB" | awk -F': ' '/SHA256:/{print $2; exit}' | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
+          EXPECTED="$(printf '%s' "$EXPECTED_CERT_SHA256" | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
+          test -n "$ACTUAL" && test "$ACTUAL" = "$EXPECTED"
+
+      - name: Verify final merged permission surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          MERGED_MANIFEST="$(find build/app/intermediates -type f -name AndroidManifest.xml -path '*/release/*' | sort | tail -1)"
+          test -n "$MERGED_MANIFEST" && test -s "$MERGED_MANIFEST"
+          python3 tool/verify_android_manifest.py "$MERGED_MANIFEST" --variant release
+          cp "$MERGED_MANIFEST" android-release-merged-manifest.xml
+
+      - name: Create private release evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cp build/app/outputs/bundle/release/app-release.aab artifacts/Welding-Gas-Wallet-production.aab
+          sha256sum artifacts/*.aab | tee artifacts/SHA256SUMS.txt
+          cp aab-signature.txt artifacts/
+          cp android-release-merged-manifest.xml artifacts/
+          cp pubspec.lock artifacts/pubspec.lock
+          flutter pub deps --json > artifacts/flutter-dependencies.json
+          (cd android && ./gradlew app:dependencies --configuration releaseRuntimeClasspath) \
+            > artifacts/android-dependencies.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Welding-Gas-Wallet-Android-Signed-AAB-${{ github.run_number }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f android/app/welding-upload.jks android/key.properties
