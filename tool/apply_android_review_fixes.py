@@ -46,6 +46,21 @@ def apply_android_review_fixes(root: Path = Path(".")) -> None:
         "material.formatTimeOfDay(TimeOfDay.fromDateTime(local))",
         "MaterialLocalizations time formatter",
     )
+    replace_exact(
+        app,
+        "  @override\n"
+        "  void dispose() {\n"
+        "    WidgetsBinding.instance.removeObserver(this);\n"
+        "    super.dispose();\n"
+        "  }",
+        "  @override\n"
+        "  void dispose() {\n"
+        "    WidgetsBinding.instance.removeObserver(this);\n"
+        "    widget.controller.dispose();\n"
+        "    super.dispose();\n"
+        "  }",
+        "app-owned controller disposal",
+    )
 
     controller = root / "lib/src/app_controller.dart"
     replace_exact(
@@ -61,6 +76,33 @@ def apply_android_review_fixes(root: Path = Path(".")) -> None:
         "await (recovery as CorruptionRecoveryRepository)"
         ".clearCorruptStore(confirmed: true);",
         "corrupt-store clearing cast",
+    )
+    replace_exact(
+        controller,
+        "  Future<void> selectFreeEditable(Set<String> cylinderIds) async {\n"
+        "    await run<void>(() => engine.selectFreeEditable(\n"
+        "          cylinderIds,\n"
+        "          expectedRevision: data!.revision,\n"
+        "        ));\n"
+        "  }\n"
+        "}",
+        "  Future<void> selectFreeEditable(Set<String> cylinderIds) async {\n"
+        "    await run<void>(() => engine.selectFreeEditable(\n"
+        "          cylinderIds,\n"
+        "          expectedRevision: data!.revision,\n"
+        "        ));\n"
+        "  }\n\n"
+        "  @override\n"
+        "  void dispose() {\n"
+        "    final subscription = _storeUpdateSubscription;\n"
+        "    _storeUpdateSubscription = null;\n"
+        "    if (subscription != null) {\n"
+        "      unawaited(subscription.cancel());\n"
+        "    }\n"
+        "    super.dispose();\n"
+        "  }\n"
+        "}",
+        "store subscription disposal",
     )
 
     reminders = root / "lib/src/reminders.dart"
