@@ -102,14 +102,34 @@ class AndroidReviewFixesTest(unittest.TestCase):
                 first["lib/src/emergency_recovery.dart"],
             )
             self.assertIn("'AR': 'ARS'", first["lib/src/locale_money.dart"])
-            self.assertIn(
-                "MaterialType.transparency",
-                first["lib/src/workshop_pearl.dart"],
+            self.assertEqual(
+                first["lib/src/workshop_pearl.dart"].count("MaterialType.transparency"),
+                1,
             )
             self.assertIn(
                 "Duration(milliseconds: 300)",
                 first["test/app_widget_test.dart"],
             )
+
+    def test_replace_exact_handles_old_fragment_nested_inside_new_fragment(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "source.dart"
+            old = "child: Padding(padding: padding, child: child),"
+            new = (
+                "child: Material(\n"
+                "  type: MaterialType.transparency,\n"
+                "  child: Padding(padding: padding, child: child),\n"
+                "),"
+            )
+            path.write_text(old, encoding="utf-8")
+
+            replace_exact(path, old, new, "nested replacement")
+            first = path.read_text(encoding="utf-8")
+            replace_exact(path, old, new, "nested replacement")
+            second = path.read_text(encoding="utf-8")
+
+            self.assertEqual(first, second)
+            self.assertEqual(second.count("MaterialType.transparency"), 1)
 
     def test_replace_exact_fails_closed_on_source_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
