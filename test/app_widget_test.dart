@@ -67,13 +67,15 @@ void main() {
     final harness = WidgetHarness();
     await harness.controller.bootstrap();
     await tester.pumpWidget(WeldingGasWalletApp(controller: harness.controller));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     for (final key in <String>['wallet', 'activity', 'spend', 'settings']) {
       expect(find.text(harness.controller.t(key)), findsWidgets);
     }
     await tester.tap(find.text(harness.controller.t('settings')).first);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text(harness.controller.t('planAndAccess')), findsOneWidget);
     expect(find.text(harness.controller.t('dataAndBackup')), findsOneWidget);
     expect(find.text(harness.controller.t('privacyAndSafety')), findsOneWidget);
