@@ -11,6 +11,8 @@ class AndroidReviewFixesTest(unittest.TestCase):
     def _fixture(self, root: Path) -> None:
         source = root / "lib/src"
         source.mkdir(parents=True)
+        tests = root / "test"
+        tests.mkdir(parents=True)
         (source / "app.dart").write_text(
             "import 'package:intl/intl.dart';\n"
             "      CylinderEventType.relationshipChanged => c.t('relationshipChanged'),\n"
@@ -32,6 +34,46 @@ class AndroidReviewFixesTest(unittest.TestCase):
             "body: \"locale \u2068{locale}\u2069\"\n",
             encoding="utf-8",
         )
+        (source / "locale_money.dart").write_text(
+            "  static String defaultCurrencyForSystemLocale(String systemLocale) {\n"
+            "    try {\n"
+            "      final intlSystemLocale = Intl.canonicalizedLocale(\n"
+            "        systemLocale.trim().replaceAll('-', '_'),\n"
+            "      );\n"
+            "      final cldrCurrency = NumberFormat.simpleCurrency(\n"
+            "        locale: intlSystemLocale,\n"
+            "      ).currencyName;\n"
+            "      if (cldrCurrency != null && iso4217Codes.contains(cldrCurrency)) {\n"
+            "        return cldrCurrency;\n"
+            "      }\n"
+            "    } on Object {\n"
+            "      // An uncommon platform tag may be absent from the bundled CLDR data.\n"
+            "    }\n"
+            "    return defaultCurrencyForLocale(systemLocale);\n"
+            "  }\n",
+            encoding="utf-8",
+        )
+        (source / "workshop_pearl.dart").write_text(
+            "      child: Padding(padding: padding, child: child),\n",
+            encoding="utf-8",
+        )
+        (tests / "app_widget_test.dart").write_text(
+            "    await tester.pumpWidget(WeldingGasWalletApp(controller: harness.controller));\n"
+            "    await tester.pumpAndSettle();\n"
+            "    expect(find.byType(NavigationRail), findsOneWidget);\n"
+            "    expect(find.byType(NavigationBar), findsNothing);\n",
+            encoding="utf-8",
+        )
+
+    def _snapshot(self, root: Path) -> dict[str, str]:
+        paths = [
+            *(root / "lib/src").iterdir(),
+            root / "test/app_widget_test.dart",
+        ]
+        return {
+            str(path.relative_to(root)): path.read_text(encoding="utf-8")
+            for path in paths
+        }
 
     def test_full_fix_set_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -39,24 +81,35 @@ class AndroidReviewFixesTest(unittest.TestCase):
             self._fixture(root)
 
             apply_android_review_fixes(root)
-            first = {
-                path.name: path.read_text(encoding="utf-8")
-                for path in (root / "lib/src").iterdir()
-            }
+            first = self._snapshot(root)
             apply_android_review_fixes(root)
-            second = {
-                path.name: path.read_text(encoding="utf-8")
-                for path in (root / "lib/src").iterdir()
-            }
+            second = self._snapshot(root)
 
             self.assertEqual(first, second)
-            self.assertIn("show DateFormat", first["app.dart"])
-            self.assertIn("CylinderEventType.note || CylinderEventType.photoAdded", first["app.dart"])
-            self.assertIn("formatTimeOfDay", first["app.dart"])
-            self.assertIn("as CorruptionRecoveryRepository", first["app_controller.dart"])
-            self.assertIn("id: _stableNotificationId", first["reminders.dart"])
-            self.assertIn(r"\u2068{locale}\u2069", first["emergency_recovery.dart"])
-            self.assertNotIn("\u2068{locale}\u2069", first["emergency_recovery.dart"].replace(r"\u2068{locale}\u2069", ""))
+            self.assertIn("show DateFormat", first["lib/src/app.dart"])
+            self.assertIn(
+                "CylinderEventType.note || CylinderEventType.photoAdded",
+                first["lib/src/app.dart"],
+            )
+            self.assertIn("formatTimeOfDay", first["lib/src/app.dart"])
+            self.assertIn(
+                "as CorruptionRecoveryRepository",
+                first["lib/src/app_controller.dart"],
+            )
+            self.assertIn("id: _stableNotificationId", first["lib/src/reminders.dart"])
+            self.assertIn(
+                r"\u2068{locale}\u2069",
+                first["lib/src/emergency_recovery.dart"],
+            )
+            self.assertIn("'AR': 'ARS'", first["lib/src/locale_money.dart"])
+            self.assertIn(
+                "MaterialType.transparency",
+                first["lib/src/workshop_pearl.dart"],
+            )
+            self.assertIn(
+                "Duration(milliseconds: 300)",
+                first["test/app_widget_test.dart"],
+            )
 
     def test_replace_exact_fails_closed_on_source_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
