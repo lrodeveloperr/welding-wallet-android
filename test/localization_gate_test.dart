@@ -20,15 +20,14 @@ void main() {
         reason: '$locale must neither omit keys nor silently merge English.',
       );
       expect(catalog, hasLength(177));
-      for (final key in <String>[
-        'annualPurchaseContract',
-        'monthlyPurchaseContract',
-        'lifetimePurchaseContract',
-        'subscribeAnnualAction',
-        'subscribeMonthlyAction',
-        'buyLifetimeAction',
-      ]) {
-        expect(catalog[key], contains('{price}'), reason: '$locale $key');
+      for (final entry in english.entries) {
+        final translated = catalog[entry.key]!;
+        expect(translated.trim(), isNotEmpty, reason: '$locale/${entry.key}');
+        expect(
+          _placeholders(translated),
+          _placeholders(entry.value),
+          reason: '$locale/${entry.key} placeholder contract',
+        );
       }
     }
   });
@@ -77,6 +76,10 @@ void main() {
     }
   });
 }
+
+Set<String> _placeholders(String value) => RegExp(
+      r'\{([A-Za-z][A-Za-z0-9_]*)\}',
+    ).allMatches(value).map((match) => match.group(1)!).toSet();
 
 Future<Map<String, String>> _catalog(String locale) async {
   final asset = 'assets/l10n/app_${locale.replaceAll('-', '_')}.arb';
