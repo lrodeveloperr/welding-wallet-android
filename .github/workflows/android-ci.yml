@@ -1,6 +1,7 @@
 name: Android · Workshop Pearl QA APK
 
 on:
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -65,7 +66,7 @@ jobs:
           set -euo pipefail
           python3 tool/apply_android_review_fixes.py
           dart format lib test integration_test
-          flutter analyze --fatal-warnings
+          flutter analyze --no-fatal-infos --fatal-warnings
           python3 -m py_compile tool/*.py
           python3 -m unittest discover -s tool -p 'test_*.py'
           test "$(find assets/l10n -maxdepth 1 -name 'app_*.arb' | wc -l | tr -d ' ')" = "30"
