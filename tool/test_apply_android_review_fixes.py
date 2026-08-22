@@ -17,12 +17,18 @@ class AndroidReviewFixesTest(unittest.TestCase):
             "import 'package:intl/intl.dart';\n"
             "      CylinderEventType.relationshipChanged => c.t('relationshipChanged'),\n"
             "      CylinderEventType.returned => c.t('eventReturned'),\n"
-            "material.formatTime(TimeOfDay.fromDateTime(local))\n",
+            "material.formatTime(TimeOfDay.fromDateTime(local))\n"
+            "if (mounted && c.errorMessage == null) Navigator.pop(context);\n"
+            "class RecordActionSheet extends StatefulWidget {}\n"
+            "State<RecordActionSheet> createState() => _RecordActionSheetState();\n"
+            "class _RecordActionSheetState extends State<RecordActionSheet> {}\n",
             encoding="utf-8",
         )
         (source / "app_controller.dart").write_text(
             "await recovery.replaceCorruptStore(validated);\n"
-            "await recovery.clearCorruptStore(confirmed: true);\n",
+            "await recovery.clearCorruptStore(confirmed: true);\n"
+            "    final subscription = _storeUpdateSubscription;\n"
+            "    if (subscription != null) unawaited(subscription.cancel());\n",
             encoding="utf-8",
         )
         (source / "reminders.dart").write_text(
@@ -92,8 +98,19 @@ class AndroidReviewFixesTest(unittest.TestCase):
                 first["lib/src/app.dart"],
             )
             self.assertIn("formatTimeOfDay", first["lib/src/app.dart"])
+            self.assertIn("context.mounted", first["lib/src/app.dart"])
+            self.assertIn("class _RecordActionSheet", first["lib/src/app.dart"])
+            self.assertNotIn("class RecordActionSheet", first["lib/src/app.dart"])
             self.assertIn(
                 "as CorruptionRecoveryRepository",
+                first["lib/src/app_controller.dart"],
+            )
+            self.assertIn(
+                "unawaited(_storeUpdateSubscription?.cancel())",
+                first["lib/src/app_controller.dart"],
+            )
+            self.assertIn(
+                "_storeUpdateSubscription = null",
                 first["lib/src/app_controller.dart"],
             )
             self.assertIn("id: _stableNotificationId", first["lib/src/reminders.dart"])
