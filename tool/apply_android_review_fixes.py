@@ -15,7 +15,7 @@ from pathlib import Path
 def replace_exact(path: Path, old: str, new: str, label: str) -> None:
     """Replace one reviewed source form, or accept an already-patched file."""
     text = path.read_text(encoding="utf-8")
-    if new in text and old not in text:
+    if new in text:
         return
     if old not in text:
         raise SystemExit(f"Android source fix failed: missing {label} in {path}")
