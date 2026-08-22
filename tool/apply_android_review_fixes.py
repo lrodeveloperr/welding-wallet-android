@@ -77,33 +77,6 @@ def apply_android_review_fixes(root: Path = Path(".")) -> None:
         ".clearCorruptStore(confirmed: true);",
         "corrupt-store clearing cast",
     )
-    replace_exact(
-        controller,
-        "  Future<void> selectFreeEditable(Set<String> cylinderIds) async {\n"
-        "    await run<void>(() => engine.selectFreeEditable(\n"
-        "          cylinderIds,\n"
-        "          expectedRevision: data!.revision,\n"
-        "        ));\n"
-        "  }\n"
-        "}",
-        "  Future<void> selectFreeEditable(Set<String> cylinderIds) async {\n"
-        "    await run<void>(() => engine.selectFreeEditable(\n"
-        "          cylinderIds,\n"
-        "          expectedRevision: data!.revision,\n"
-        "        ));\n"
-        "  }\n\n"
-        "  @override\n"
-        "  void dispose() {\n"
-        "    final subscription = _storeUpdateSubscription;\n"
-        "    _storeUpdateSubscription = null;\n"
-        "    if (subscription != null) {\n"
-        "      unawaited(subscription.cancel());\n"
-        "    }\n"
-        "    super.dispose();\n"
-        "  }\n"
-        "}",
-        "store subscription disposal",
-    )
 
     reminders = root / "lib/src/reminders.dart"
     replace_exact(
