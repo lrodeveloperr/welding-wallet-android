@@ -13,13 +13,26 @@ from pathlib import Path
 
 
 def replace_exact(path: Path, old: str, new: str, label: str) -> None:
-    """Replace one reviewed source form, or accept an already-patched file."""
+    """Replace reviewed source while remaining safe when *old* is inside *new*.
+
+    Some compatibility rewrites wrap the old fragment inside a larger new
+    fragment. A naive ``text.replace(old, new)`` would therefore re-wrap an
+    already-patched block on every run. Existing exact ``new`` blocks are
+    temporarily protected before looking for residual ``old`` blocks.
+    """
     text = path.read_text(encoding="utf-8")
-    if new in text:
-        return
-    if old not in text:
+    sentinel = f"__WGW_ANDROID_REVIEW_FIX_{label.replace(' ', '_').upper()}__"
+    if sentinel in text:
+        raise SystemExit(f"Android source fix failed: sentinel collision for {label} in {path}")
+
+    protected = text.replace(new, sentinel)
+    if old not in protected:
+        if sentinel in protected:
+            return
         raise SystemExit(f"Android source fix failed: missing {label} in {path}")
-    path.write_text(text.replace(old, new), encoding="utf-8")
+
+    patched = protected.replace(old, new).replace(sentinel, new)
+    path.write_text(patched, encoding="utf-8")
 
 
 def apply_android_review_fixes(root: Path = Path(".")) -> None:
