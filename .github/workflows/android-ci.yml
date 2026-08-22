@@ -70,7 +70,7 @@ jobs:
           python3 -m py_compile tool/*.py
           python3 -m unittest discover -s tool -p 'test_*.py'
           test "$(find assets/l10n -maxdepth 1 -name 'app_*.arb' | wc -l | tr -d ' ')" = "30"
-          ! rg -n "preview entitlement|fake billing|hard.?coded USD|com\\.google\\.firebase|firebase_analytics|appsflyer|adjust_sdk" lib pubspec.yaml
+          ! grep -REn -E 'preview entitlement|fake billing|hard.?coded USD|com\.google\.firebase|firebase_analytics|appsflyer|adjust_sdk' lib pubspec.yaml
 
       - name: Unit and widget tests
         shell: bash
