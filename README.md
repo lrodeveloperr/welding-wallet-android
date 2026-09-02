@@ -1,12 +1,16 @@
 # Welding Gas Wallet — Workshop Pearl
 
-Premium local-first Android and iOS cylinder record wallet by GoodUse Studios.
+Premium local-first Android and iOS **gas-cylinder inventory wallet** by GoodUse Studios.
 This repository uses the approved Workshop Pearl skin and the GoodUse product
 grammar: a calm pearl-blue surface system, one dominant action per view, stable
 thumb navigation, complete state handling, and a settings-led workflow.
 
 ## Product contract
 
+- **Gas wallet only:** the product exists to inventory and manage user-entered welding-gas cylinder records.
+- **No scanning:** no barcode scanner, QR scanner, camera-capture workflow, OCR, scan-to-add path, or scanner permission/dependency may be shipped.
+- **No adjacent welding modules:** no consumables inventory, welding job/process log, procedure/WPS tooling, machine tracking, metal/heat traceability, or other non-gas-wallet workflow belongs in this app.
+- Supporting functions are allowed only when they directly serve the gas wallet: local storage, reminders, backup/recovery, settings, localization, purchase/restore, and gas-cylinder record management.
 - No GoodUse Studios account, ads, analytics SDK, tracker, or cylinder-record
   cloud database.
 - The first three current cylinder records remain editable for free. A fourth
@@ -28,6 +32,10 @@ thumb navigation, complete state handling, and a settings-led workflow.
 - The app records user-entered facts. It does not determine ownership,
   fillability, inspection/test status, cylinder safety, gas suitability, legal
   compliance, or supplier acceptance.
+
+## Scope gate
+
+Before release, reviewers must verify that the source tree and generated hosts contain **zero** scanner UI/routes, scan strings, camera permissions, barcode/QR/OCR dependencies, or scan-triggered record creation. Any such item is a release blocker. The same gate applies to non-gas inventory or welding-process modules.
 
 ## Source and generated hosts
 
