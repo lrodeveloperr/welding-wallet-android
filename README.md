@@ -1,23 +1,17 @@
 # Welding Gas Wallet — Android
 
-Native Flutter Android application for the GoodUse Studios Welding Gas Wallet product.
+Native Kotlin and Jetpack Compose implementation of the approved Welding Gas Wallet MVP for Android phones and tablets. Flutter is not used.
 
-## Locked product scope
+The app is an offline, cylinder-only wallet with search and status filters, refill/exchange/cost history, suppliers, local reminders, duplicate entry, 15-second deletion undo, archive/return, native backup files, 30 selectable languages, automatic-region currency with manual override, a three-active-cylinder free limit, an anchored lower ad banner, and a monthly Play subscription that removes the banner and limit.
 
-This app is **gas-cylinder inventory only**.
+Currency values are shown with locale-appropriate signs such as `$`, `£`, `€`, `¥`, or `₹`. ISO currency codes remain internal so historical transactions can stay normalized and currencies are never silently converted or combined.
 
-Included:
-- Cylinder/gas inventory records.
-- Add, edit, archive, and review cylinder records.
-- Inventory reminders and local backup/restore that directly support the gas wallet.
-- Settings, localization, and the existing gas-inventory monetization controls.
+The app derives from `lrodeveloperr/Android-shell`; the reusable shell repository remains unchanged. GitHub Actions are manual-only and do not run on a code push. Production packaging requires publisher-owned AdMob identifiers, the Play licensing public key, and the matching monthly product in Play Console.
 
-Explicitly excluded:
-- Barcode, QR-code, camera, OCR, NFC, or any other scanning/capture workflow.
-- Welding consumables inventory.
-- Welding jobs, procedures, process tracking, machine tracking, or production workflow features.
-- Any adjacent module that turns the product into a general welding workbench.
+Local structural validation:
 
-Any future change that reintroduces scanning or a non-gas-inventory product area is outside the approved product boundary and must be treated as a release-blocking scope regression.
+```bash
+bash scripts/validate-shell.sh
+```
 
-The Workshop Pearl implementation is developed and reviewed on feature branches before release.
+Opening or building the project requires current Android Studio, JDK 17, Android SDK 36, and Gradle 8.13. Do not trigger the manual APK workflow unless its cost is explicitly authorized.

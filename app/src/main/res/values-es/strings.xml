@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Shell</string>
+    <string name="home">Inicio</string>
+    <string name="library">Biblioteca</string>
+    <string name="activity">Actividad</string>
+    <string name="settings">Ajustes</string>
+</resources>
