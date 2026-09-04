@@ -60,11 +60,11 @@ class MonetizationAccessTest {
     @Test fun entitlementsAreScopedToTheProfileProductKind() {
         val products = listOf(
             PurchaseProduct("lifetime", StoreProductKind.OneTime, "Lifetime", "$10"),
-            PurchaseProduct("monthly", StoreProductKind.Subscription, "Monthly", "$2"),
+            PurchaseProduct("subscription", StoreProductKind.Subscription, "Subscription", "$20"),
         )
         assertTrue(hasEntitlementForMode(MonetizationMode.OneTimeUnlock, setOf("lifetime"), products))
         assertFalse(hasEntitlementForMode(MonetizationMode.Subscription, setOf("lifetime"), products))
-        assertTrue(hasEntitlementForMode(MonetizationMode.Subscription, setOf("monthly"), products))
+        assertTrue(hasEntitlementForMode(MonetizationMode.Subscription, setOf("subscription"), products))
     }
 
     @Test fun subscriptionCacheExpiresWhileOneTimeCachePersists() {
@@ -77,8 +77,8 @@ class MonetizationAccessTest {
 
     @Test fun entitlementRecordsKeepIndependentVerificationTimes() {
         assertEquals(
-            mapOf("lifetime" to 100L, "monthly" to 200L),
-            parseEntitlementRecords(setOf("lifetime\t100", "monthly\t200", "invalid")),
+            mapOf("lifetime" to 100L, "subscription" to 200L),
+            parseEntitlementRecords(setOf("lifetime\t100", "subscription\t200", "invalid")),
         )
     }
 }

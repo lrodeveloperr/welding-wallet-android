@@ -25,7 +25,7 @@ object ShellConfig {
             freeSuccessfulActions = 3,
             subscriptionOfflineGraceHours = 72,
             playLicensePublicKey = BuildConfig.PLAY_LICENSE_PUBLIC_KEY,
-            products = listOf(PurchaseProduct("com.gooduse.weldinggaswallet.pro.monthly", StoreProductKind.Subscription, "Welding Gas Wallet Pro", "Monthly")),
+            products = listOf(PurchaseProduct("com.gooduse.weldinggaswallet.pro.yearly", StoreProductKind.Subscription, "Welding Gas Wallet Pro", "Annual price unavailable")),
             benefits = listOf("Unlimited cylinders", "No advertisements", "Cylinder records stay local"),
         ),
         ads = AdsConfig(BuildConfig.ADMOB_APP_ID, BuildConfig.ADMOB_BANNER_ID),
@@ -46,7 +46,7 @@ object ShellConfig {
         if (definition.brand.appName.isBlank()) add("brand.appName must not be blank")
         if (!definition.brand.supportEmail.contains('@')) add("brand.supportEmail must be an email address")
         if (definition.destinations.map { it.id }.distinct().size != definition.destinations.size) add("destination IDs must be unique")
-        if (definition.monetization.requiredProductKind() == null) add("a monthly subscription is required")
+        if (definition.monetization.requiredProductKind() == null) add("an annual subscription is required")
     }
 }
 

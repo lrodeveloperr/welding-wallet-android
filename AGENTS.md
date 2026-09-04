@@ -7,7 +7,8 @@ This is the authoritative native Android application. It derives from `lrodevelo
 - The approved browser preview is the visual and behavioral source of truth.
 - Keep Material 3 navigation, sheets, icons, keyboards, safe areas, accessibility, RTL, and adaptive phone/tablet behavior native.
 - Free users have at most three active cylinders and a permanently reserved lower banner area.
-- A verified monthly subscription removes both the banner and cylinder limit.
+- A verified annual subscription removes both the banner and cylinder limit.
+- The approved commercial base price is US$19.99 per year. Google Play owns geographic prices; customer-facing UI must display Play's localized price, currency, and billing period and must never calculate a price from device location or hard-code US$19.99.
 - Cylinder records stay on-device. Native file export/import is optional and purchase entitlement is never included.
 - Display currency signs in the interface. Persist ISO currency codes only in the data layer; never silently convert or combine currencies.
 - Preserve delete confirmation, 15-second Undo, Return/Archive, activity history, reminders, suppliers, search/filters, and the data-entry friction reductions.
@@ -43,5 +44,5 @@ This is the authoritative native Android application. It derives from `lrodevelo
 - All GitHub workflows must remain `workflow_dispatch` only.
 - Never run or dispatch APK, bundle, or paid hosted build workflows without explicit user authorization.
 - Production ads require publisher-owned AdMob app/banner IDs.
-- Production purchase verification requires the Play licensing public key and the matching monthly product.
+- Production purchase verification requires the Play licensing public key and `com.gooduse.weldinggaswallet.pro.yearly`, configured with exactly one auto-renewing one-year base plan, a US$19.99 United States base price, and reviewed geographic prices for every enabled country.
 - Run `bash scripts/validate-shell.sh` for code-only structural checks.

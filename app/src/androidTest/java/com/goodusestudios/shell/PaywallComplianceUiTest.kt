@@ -34,10 +34,10 @@ class PaywallComplianceUiTest {
                         status = BillingStatus.Ready,
                         products = listOf(
                             BillingProduct(
-                                id = "test.monthly",
-                                title = "Monthly",
+                                id = "test.yearly",
+                                title = "Annual",
                                 description = "Test product",
-                                formattedPrice = "USD 1.99 / month",
+                                formattedPrice = "USD 19.99 / year",
                                 kind = StoreProductKind.Subscription,
                                 available = true,
                             ),

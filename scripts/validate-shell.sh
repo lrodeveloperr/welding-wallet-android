@@ -20,7 +20,7 @@ fi
 
 require_text "$root/app/build.gradle.kts" 'applicationId = "com.goodusestudios.weldinggaswallet"'
 require_text "$config" 'initialMode = MonetizationMode.AdsWithSubscription'
-require_text "$config" 'com.gooduse.weldinggaswallet.pro.monthly'
+require_text "$config" 'com.gooduse.weldinggaswallet.pro.yearly'
 require_text "$config" 'Icons.Outlined.PropaneTank'
 require_text "$feature" 'activeCylinders.size >= 3'
 require_text "$feature" 'Search cylinders'

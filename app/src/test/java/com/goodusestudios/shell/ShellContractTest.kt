@@ -11,6 +11,12 @@ class ShellContractTest {
     @Test fun shippedTemplateConfigurationIsInternallyValid() =
         assertTrue(ShellConfig.validationErrors().joinToString(), ShellConfig.validationErrors().isEmpty())
 
+    @Test fun shippedSubscriptionUsesAnnualStorefrontPricing() {
+        val product = ShellConfig.definition.monetization.products.single()
+        assertEquals("com.gooduse.weldinggaswallet.pro.yearly", product.id)
+        assertEquals("Annual price unavailable", product.fallbackPrice)
+    }
+
     @Test fun firstRunRequiresFullOnboarding() =
         assertEquals(ShellGate.FullOnboarding, resolveShellGate(false, null, 1))
 
