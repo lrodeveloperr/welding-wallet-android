@@ -81,7 +81,7 @@ class BillingController(
     private val configuredById = configuredProducts.associateBy { it.id }
     private val _state = MutableStateFlow(BillingUiState(products = fallbackProducts()))
     val state: StateFlow<BillingUiState> = _state.asStateFlow()
-    private val readyActions = mutableListOf<() -> Unit>()
+    private var readyAction: (() -> Unit)? = null
     private var cachedVerificationTimes: Map<String, Long> = emptyMap()
     private var connecting = false
 
@@ -115,13 +115,12 @@ class BillingController(
                 connecting = false
                 if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                     _state.value = _state.value.copy(status = BillingStatus.Ready)
-                    val actions = readyActions.toList()
-                    readyActions.clear()
+                    val action = readyAction
+                    readyAction = null
                     refreshProducts()
-                    queryOwnedPurchases(showRestoreMessage = false)
-                    actions.forEach { it() }
+                    if (action == null) queryOwnedPurchases(showRestoreMessage = false) else action()
                 } else {
-                    readyActions.clear()
+                    readyAction = null
                     _state.value = _state.value.copy(
                         status = BillingStatus.Unavailable,
                         message = result.debugMessage.ifBlank { "Google Play purchases are unavailable." },
@@ -139,6 +138,7 @@ class BillingController(
     fun restore() = whenReady { queryOwnedPurchases(showRestoreMessage = true) }
 
     fun launchPurchase(activity: Activity, productId: String) = whenReady {
+        if (_state.value.working || _state.value.entitled) return@whenReady
         if (productId !in configuredById) {
             _state.value = _state.value.copy(message = "The selected product is not configured for this app.")
             return@whenReady
@@ -168,8 +168,10 @@ class BillingController(
     }
 
     private fun whenReady(action: () -> Unit) {
+        if (_state.value.working) return
         if (billingClient.isReady) action() else {
-            readyActions += action
+            if (readyAction != null) return
+            readyAction = action
             connect()
         }
     }
@@ -187,7 +189,8 @@ class BillingController(
             billingClient.queryProductDetailsAsync(params) { result, queryResult ->
                 if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                     queryResult.productDetailsList.forEach { detailsById[it.productId] = it }
-                    _state.value = _state.value.copy(products = configuredProducts.map(::toBillingProduct), message = null)
+                    val productsState = configuredProducts.map(::toBillingProduct)
+                    _state.value = _state.value.copy(products = productsState, message = if (productsState.none { it.available }) "Google Play did not return an available product. Try reconnecting." else null)
                 } else {
                     _state.value = _state.value.copy(message = result.debugMessage)
                 }

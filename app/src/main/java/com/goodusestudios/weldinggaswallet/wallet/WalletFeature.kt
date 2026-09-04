@@ -7,9 +7,11 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -69,6 +71,7 @@ import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -107,6 +110,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.goodusestudios.weldinggaswallet.ui.FeatureCanvas
 import com.goodusestudios.weldinggaswallet.ui.FeatureCanvasScope
@@ -117,6 +121,7 @@ import java.util.Calendar
 import java.util.Currency
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 fun weldingWalletFeature(store: WalletStore): FeatureCanvas = { scope -> WalletFeature(store, scope) }
 
@@ -140,6 +145,8 @@ private fun CylinderHome(store: WalletStore, scope: FeatureCanvasScope) {
     var expandedId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var showForm by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(scope.isEntitled) { store.reconcileAccess(scope.isEntitled) }
+    BackHandler(enabled = selectedId != null) { selectedId = null }
     val visible = state.activeCylinders.filter { cylinder ->
         val matchesStatus = filter == StatusFilter.All || cylinder.status.name == filter.name
         val haystack = listOf(cylinder.gas, cylinder.capacityLabel, store.supplierName(cylinder.supplierId), cylinder.relationship.label, cylinder.serial).joinToString(" ")
@@ -157,15 +164,17 @@ private fun CylinderHome(store: WalletStore, scope: FeatureCanvasScope) {
         },
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            state.message?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
             item { SummaryCard(state.activeCylinders.size, scope.isEntitled, scope.requestPaywall) }
             item { OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), placeholder = { Text("Search cylinders") }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, singleLine = true) }
             item { FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { StatusFilter.entries.forEach { item -> FilterChip(selected = filter == item, onClick = { filter = item }, label = { Text(item.name) }) } } }
             if (visible.isEmpty()) item { EmptyState(if (state.activeCylinders.isEmpty()) "No cylinders yet" else "No matching cylinders", if (state.activeCylinders.isEmpty()) "Add a gas and capacity to start your wallet." else "Try another search or filter.", Icons.Outlined.PropaneTank) }
-            items(visible, key = { it.id }) { cylinder -> CylinderCard(store, cylinder, expandedId == cylinder.id, { expandedId = if (expandedId == cylinder.id) null else cylinder.id }, { selectedId = cylinder.id }) }
-            state.deleted?.takeIf { it.expiresAt >= System.currentTimeMillis() }?.let { deleted -> item { Card { Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Text("${deleted.cylinder.gas} deleted", Modifier.weight(1f)); TextButton(store::undoDelete) { Text("Undo") } } } } }
+            items(visible, key = { it.id }) { cylinder -> CylinderCard(store, cylinder, expandedId == cylinder.id, scope.isEntitled, scope.requestPaywall, { expandedId = if (expandedId == cylinder.id) null else cylinder.id }, { selectedId = cylinder.id }) }
+            state.deleted?.takeIf { it.expiresAt >= System.currentTimeMillis() }?.let { deleted -> item { LaunchedEffect(deleted.expiresAt) { delay((deleted.expiresAt - System.currentTimeMillis()).coerceAtLeast(0)); store.expireUndo() }; Card { Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Text("${deleted.cylinder.gas} deleted", Modifier.weight(1f)); TextButton(store::undoDelete) { Text("Undo") } } } } }
         }
     }
-    if (showForm) CylinderFormSheet(store, null, onDismiss = { showForm = false })
+    if (showForm) CylinderFormSheet(store, null, scope.isEntitled, onDismiss = { showForm = false })
+    if (store.requiresFreeCylinderSelection(scope.isEntitled)) FreeCylinderSelectionDialog(store, state.activeCylinders, scope.isEntitled)
 }
 
 @Composable
@@ -180,14 +189,43 @@ private fun SummaryCard(count: Int, entitled: Boolean, onUpgrade: () -> Unit) {
 }
 
 @Composable
-private fun CylinderCard(store: WalletStore, cylinder: Cylinder, expanded: Boolean, onExpand: () -> Unit, onOpen: () -> Unit) {
+private fun FreeCylinderSelectionDialog(store: WalletStore, cylinders: List<Cylinder>, entitled: Boolean) {
+    val alreadyManaged = store.state.collectAsStateWithLifecycle().value.freeManagedCylinderIds
+    var selected by remember(alreadyManaged) { mutableStateOf(alreadyManaged) }
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Choose 3 cylinders") },
+        text = {
+            LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                items(cylinders, key = { it.id }) { cylinder ->
+                    val checked = cylinder.id in selected
+                    val enabled = checked || selected.size < 3
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = enabled) {
+                            selected = if (checked) selected - cylinder.id else selected + cylinder.id
+                        }.padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked, onCheckedChange = null, enabled = enabled)
+                        Text("${cylinder.gas} · ${cylinder.capacityLabel}")
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton({ store.selectFreeManagedCylinders(selected, entitled) }, enabled = selected.size == 3) { Text("Confirm") } },
+    )
+}
+
+@Composable
+private fun CylinderCard(store: WalletStore, cylinder: Cylinder, expanded: Boolean, entitled: Boolean, onUpgrade: () -> Unit, onExpand: () -> Unit, onOpen: () -> Unit) {
+    val canManage = store.canManageCylinder(cylinder.id, entitled)
     OutlinedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
         Row(Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.PropaneTank, null, Modifier.size(42.dp).padding(7.dp), tint = MaterialTheme.colorScheme.primary)
             Column(Modifier.weight(1f)) { Text(cylinder.gas, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Text(cylinder.capacityLabel); Text("${store.supplierName(cylinder.supplierId)} · ${cylinder.relationship.label}", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            StatusPill(cylinder.status); IconButton(onClick = onExpand) { Icon(if (expanded) Icons.Outlined.ArrowDropDown else Icons.Outlined.ChevronRight, if (expanded) "Collapse status" else "Update status") }
+            StatusPill(cylinder.status); IconButton(onClick = { if (canManage) onExpand() else onUpgrade() }) { Icon(if (expanded) Icons.Outlined.ArrowDropDown else Icons.Outlined.ChevronRight, if (expanded) "Collapse status" else if (canManage) "Update status" else "Read-only cylinder") }
         }
-        if (expanded) { HorizontalDivider(); Column(Modifier.padding(14.dp)) { Text("Update status", color = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.height(8.dp)); FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { CylinderStatus.entries.forEach { status -> StatusChoice(status, cylinder.status == status) { store.setStatus(cylinder.id, status) } } } } }
+        if (expanded && canManage) { HorizontalDivider(); Column(Modifier.padding(14.dp)) { Text("Update status", color = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.height(8.dp)); FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { CylinderStatus.entries.forEach { status -> StatusChoice(status, cylinder.status == status) { store.setStatus(cylinder.id, status, entitled) } } } } }
     }
 }
 
@@ -200,21 +238,23 @@ private fun statusIcon(status: CylinderStatus): ImageVector = when (status) { Cy
 private fun CylinderDetail(store: WalletStore, cylinder: Cylinder, scope: FeatureCanvasScope, onBack: () -> Unit) {
     val state by store.state.collectAsStateWithLifecycle()
     val live = state.cylinders.firstOrNull { it.id == cylinder.id } ?: return
-    var edit by remember { mutableStateOf(false) }; var service by remember { mutableStateOf<ActivityKind?>(null) }; var reminder by remember { mutableStateOf(false) }; var confirmDelete by remember { mutableStateOf(false) }
+    val canManage = store.canManageCylinder(live.id, scope.isEntitled)
+    var edit by rememberSaveable { mutableStateOf(false) }; var service by rememberSaveable { mutableStateOf<ActivityKind?>(null) }; var reminder by rememberSaveable { mutableStateOf(false) }; var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    BackHandler(onBack = onBack)
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 40.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onBack) { Icon(Icons.Outlined.ArrowBack, "Back") }; Text(live.gas, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); IconButton({ edit = true }) { Icon(Icons.Outlined.Edit, "Edit cylinder") } } }
+        item { Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onBack) { Icon(Icons.Outlined.ArrowBack, "Back") }; Text(live.gas, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)); if (canManage) IconButton({ edit = true }) { Icon(Icons.Outlined.Edit, "Edit cylinder") } } }
         item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .35f)), shape = RoundedCornerShape(18.dp)) { Column(Modifier.fillMaxWidth().padding(20.dp)) { Text(live.gas.uppercase(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary); Text(live.capacityLabel, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); StatusPill(live.status) } } }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Fact("Supplier", store.supplierName(live.supplierId), Modifier.weight(1f)); Fact("Relationship", live.relationship.label, Modifier.weight(1f)) } }
         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Fact("Serial", live.serial.ifBlank { "Not set" }, Modifier.weight(1f)); Fact("Acquired", DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(live.acquiredAt)), Modifier.weight(1f)) } }
-        item { FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Button({ service = ActivityKind.Refill }) { Text("Refill") }; OutlinedButton({ service = ActivityKind.Exchange }) { Text("Exchange") }; OutlinedButton({ service = ActivityKind.Cost }) { Text("Add cost") } } }
-        item { OutlinedButton({ reminder = true }, Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Notifications, null); Spacer(Modifier.width(8.dp)); Text(live.reminderAt?.let { "Reminder · ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))}" } ?: "Add reminder") } }
+        if (canManage) item { FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Button({ service = ActivityKind.Refill }) { Text("Refill") }; OutlinedButton({ service = ActivityKind.Exchange }) { Text("Exchange") }; OutlinedButton({ service = ActivityKind.Cost }) { Text("Add cost") } } }
+        if (canManage) item { OutlinedButton({ reminder = true }, Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Icon(Icons.Outlined.Notifications, null); Spacer(Modifier.width(8.dp)); Text(live.reminderAt?.let { "Reminder · ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it))}" } ?: "Add reminder") } }
         item { Text("Recent activity", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
         items(state.activity.filter { it.cylinderId == live.id }.take(5), key = { it.id }) { ActivityRow(store, it) }
         item { FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedButton({ store.archive(live.id, CylinderLifecycle.Returned); onBack() }) { Text("Return cylinder") }; OutlinedButton({ store.archive(live.id, CylinderLifecycle.Archived); onBack() }) { Text("Archive cylinder") }; TextButton({ confirmDelete = true }) { Text("Delete", color = MaterialTheme.colorScheme.error) } } }
     }
-    if (edit) CylinderFormSheet(store, live, onDismiss = { edit = false }, onDuplicate = { if (state.activeCylinders.size >= 3 && !scope.isEntitled) scope.requestPaywall() else { store.duplicate(live); edit = false } })
-    service?.let { ServiceSheet(store, live, it) { service = null } }
-    if (reminder) ReminderSheet(store, live) { reminder = false }
+    if (edit) CylinderFormSheet(store, live, scope.isEntitled, onDismiss = { edit = false }, onDuplicate = { if (!store.canAddCylinder(scope.isEntitled)) scope.requestPaywall() else { store.duplicate(live, scope.isEntitled); edit = false } })
+    service?.let { ServiceSheet(store, live, it, scope.isEntitled) { service = null } }
+    if (reminder) ReminderSheet(store, live, scope.isEntitled) { reminder = false }
     if (confirmDelete) AlertDialog(onDismissRequest = { confirmDelete = false }, title = { Text("Delete ${live.gas}?") }, text = { Text("Its linked activity will also be deleted. You can undo for 15 seconds.") }, confirmButton = { TextButton({ store.delete(live.id); confirmDelete = false; onBack() }) { Text("Delete cylinder", color = MaterialTheme.colorScheme.error) } }, dismissButton = { TextButton({ confirmDelete = false }) { Text("Cancel") } })
 }
 
@@ -222,18 +262,18 @@ private fun CylinderDetail(store: WalletStore, cylinder: Cylinder, scope: Featur
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CylinderFormSheet(store: WalletStore, existing: Cylinder?, onDismiss: () -> Unit, onDuplicate: (() -> Unit)? = null) {
+private fun CylinderFormSheet(store: WalletStore, existing: Cylinder?, entitled: Boolean, onDismiss: () -> Unit, onDuplicate: (() -> Unit)? = null) {
     val state by store.state.collectAsStateWithLifecycle()
-    var gas by remember { mutableStateOf(existing?.gas ?: "") }
-    var capacity by remember { mutableStateOf(existing?.capacityValue?.toString() ?: "") }
-    var unit by remember { mutableStateOf(existing?.capacityUnit ?: state.defaults.capacityUnit) }
-    var supplierId by remember { mutableStateOf(existing?.supplierId ?: state.defaults.supplierId) }
-    var relationship by remember { mutableStateOf(existing?.relationship ?: state.defaults.relationship) }
-    var serial by remember { mutableStateOf(existing?.serial ?: "") }
-    var notes by remember { mutableStateOf(existing?.notes ?: "") }
-    var optional by remember { mutableStateOf(false) }
-    var addSupplier by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf("") }
+    var gas by rememberSaveable { mutableStateOf(existing?.gas ?: "") }
+    var capacity by rememberSaveable { mutableStateOf(existing?.capacityValue?.toString() ?: "") }
+    var unit by rememberSaveable { mutableStateOf(existing?.capacityUnit ?: state.defaults.capacityUnit) }
+    var supplierId by rememberSaveable { mutableStateOf(existing?.supplierId ?: state.defaults.supplierId) }
+    var relationship by rememberSaveable { mutableStateOf(existing?.relationship ?: state.defaults.relationship) }
+    var serial by rememberSaveable { mutableStateOf(existing?.serial ?: "") }
+    var notes by rememberSaveable { mutableStateOf(existing?.notes ?: "") }
+    var optional by rememberSaveable { mutableStateOf(false) }
+    var addSupplier by rememberSaveable { mutableStateOf(false) }
+    var error by rememberSaveable { mutableStateOf("") }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(if (existing == null) "Add cylinder" else "Edit cylinder", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -273,7 +313,7 @@ private fun CylinderFormSheet(store: WalletStore, existing: Cylinder?, onDismiss
             }
             Button({
                 val number = capacity.toDoubleOrNull()
-                val success = if (number == null || number <= 0) false else if (existing == null) store.addCylinder(gas, number, unit, supplierId, relationship, serial, notes) != null else store.updateCylinder(existing.copy(gas = gas.trim(), capacityValue = number, capacityUnit = unit, supplierId = supplierId, relationship = relationship, serial = serial, notes = notes))
+                val success = if (number == null || number <= 0) false else if (existing == null) store.addCylinder(gas, number, unit, supplierId, relationship, serial, notes, entitled) != null else store.updateCylinder(existing.copy(gas = gas.trim(), capacityValue = number, capacityUnit = unit, supplierId = supplierId, relationship = relationship, serial = serial, notes = notes), entitled)
                 if (success) onDismiss() else error = "Enter a gas and positive capacity. Serial numbers must be unique."
             }, Modifier.fillMaxWidth(), enabled = gas.isNotBlank() && (capacity.toDoubleOrNull() ?: 0.0) > 0) { Text("Save") }
             onDuplicate?.let { OutlinedButton(it, Modifier.fillMaxWidth()) { Icon(Icons.Outlined.ContentCopy, null); Spacer(Modifier.width(8.dp)); Text("Duplicate cylinder") } }
@@ -284,19 +324,30 @@ private fun CylinderFormSheet(store: WalletStore, existing: Cylinder?, onDismiss
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ServiceSheet(store: WalletStore, cylinder: Cylinder, kind: ActivityKind, onDismiss: () -> Unit) {
-    var amount by remember { mutableStateOf("") }; var serial by remember { mutableStateOf("") }; var sameCapacity by remember { mutableStateOf(true) }; var capacity by remember { mutableStateOf("") }; var unit by remember { mutableStateOf(cylinder.capacityUnit) }; var date by remember { mutableStateOf(System.currentTimeMillis()) }; var error by remember { mutableStateOf("") }; val sign = store.currencySign(store.defaultCurrency); val last = store.state.value.activity.firstOrNull { it.cylinderId == cylinder.id && it.amountMinor != null && it.currencyCode == store.defaultCurrency }?.amountMinor
-    ModalBottomSheet(onDismissRequest = onDismiss) { Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Text(kind.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text("Today · $sign", color = MaterialTheme.colorScheme.onSurfaceVariant); if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error); OutlinedTextField(amount, { amount = it }, Modifier.fillMaxWidth(), label = { Text("Amount") }, prefix = { Text(sign) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)); last?.let { minor -> TextButton({ amount = BigDecimal(minor).divide(BigDecimal(100)).toPlainString() }) { Text("Use last cost · $sign${BigDecimal(minor).divide(BigDecimal(100))}") } }; if (kind == ActivityKind.Exchange) { OutlinedTextField(serial, { serial = it }, Modifier.fillMaxWidth(), label = { Text("Replacement serial (optional)") }); Row(verticalAlignment = Alignment.CenterVertically) { Text("Same capacity", Modifier.weight(1f)); Switch(sameCapacity, { sameCapacity = it }) }; if (!sameCapacity) Row { OutlinedTextField(capacity, { capacity = it }, Modifier.weight(1f), label = { Text("Capacity") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)); TextButton({ unit = if (unit == "ft3") "L" else "ft3" }) { Text(unit.replace("3", "³")) } } }; Button({ val value = amount.toBigDecimalOrNull(); val ok = value != null && store.recordService(cylinder.id, kind, value, store.defaultCurrency, date, serial, if (sameCapacity) null else capacity.toDoubleOrNull(), if (sameCapacity) null else unit); if (ok) onDismiss() else error = "Enter a positive amount and a unique replacement serial." }, Modifier.fillMaxWidth(), enabled = (amount.toBigDecimalOrNull() ?: BigDecimal.ZERO) > BigDecimal.ZERO) { Text("Save") } } }
+private fun ServiceSheet(store: WalletStore, cylinder: Cylinder, kind: ActivityKind, entitled: Boolean, onDismiss: () -> Unit) {
+    var amount by rememberSaveable { mutableStateOf("") }; var serial by rememberSaveable { mutableStateOf("") }; var sameCapacity by rememberSaveable { mutableStateOf(true) }; var capacity by rememberSaveable { mutableStateOf("") }; var unit by rememberSaveable { mutableStateOf(cylinder.capacityUnit) }; var date by rememberSaveable { mutableStateOf(System.currentTimeMillis()) }; var error by rememberSaveable { mutableStateOf("") }; val sign = store.currencySign(store.defaultCurrency); val last = store.state.value.activity.firstOrNull { it.cylinderId == cylinder.id && it.amountMinor != null && it.currencyCode == store.defaultCurrency }?.amountMinor
+    ModalBottomSheet(onDismissRequest = onDismiss) { Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { Text(kind.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text("Today · $sign", color = MaterialTheme.colorScheme.onSurfaceVariant); if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error); OutlinedTextField(amount, { amount = it }, Modifier.fillMaxWidth(), label = { Text("Amount") }, prefix = { Text(sign) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)); last?.let { minor -> TextButton({ amount = BigDecimal(minor).divide(BigDecimal(100)).toPlainString() }) { Text("Use last cost · $sign${BigDecimal(minor).divide(BigDecimal(100))}") } }; if (kind == ActivityKind.Exchange) { OutlinedTextField(serial, { serial = it }, Modifier.fillMaxWidth(), label = { Text("Replacement serial (optional)") }); Row(verticalAlignment = Alignment.CenterVertically) { Text("Same capacity", Modifier.weight(1f)); Switch(sameCapacity, { sameCapacity = it }) }; if (!sameCapacity) Row { OutlinedTextField(capacity, { capacity = it }, Modifier.weight(1f), label = { Text("Capacity") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)); TextButton({ unit = if (unit == "ft3") "L" else "ft3" }) { Text(unit.replace("3", "³")) } } }; Button({ val value = amount.toBigDecimalOrNull(); val replacement = if (sameCapacity) null else capacity.toDoubleOrNull(); val ok = value != null && (sameCapacity || replacement != null && replacement > 0) && store.recordService(cylinder.id, kind, value, store.defaultCurrency, date, serial, replacement, if (sameCapacity) null else unit, entitled); if (ok) onDismiss() else error = "Enter a positive amount, valid replacement capacity, and unique replacement serial." }, Modifier.fillMaxWidth(), enabled = (amount.toBigDecimalOrNull() ?: BigDecimal.ZERO) > BigDecimal.ZERO && (sameCapacity || (capacity.toDoubleOrNull() ?: 0.0) > 0)) { Text("Save") } } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ReminderSheet(store: WalletStore, cylinder: Cylinder, onDismiss: () -> Unit) {
+private fun ReminderSheet(store: WalletStore, cylinder: Cylinder, entitled: Boolean, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    var enabled by remember { mutableStateOf(cylinder.reminderAt != null) }
-    var days by remember { mutableIntStateOf(7) }
-    var date by remember { mutableStateOf(cylinder.reminderAt ?: System.currentTimeMillis() + 7 * 86_400_000L) }
+    var error by rememberSaveable { mutableStateOf("") }
+    var pendingDate by rememberSaveable { mutableStateOf<Long?>(null) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val requested = pendingDate
+        pendingDate = null
+        val scheduled = granted && requested != null && ReminderReceiver.schedule(context, cylinder, requested)
+        val saved = scheduled && store.setReminder(cylinder.id, requested, entitled)
+        if (saved) onDismiss() else {
+            if (scheduled) ReminderReceiver.schedule(context, cylinder, cylinder.reminderAt)
+            error = if (!granted) "Notification permission is required to save this reminder." else store.state.value.message ?: "The change could not be saved."
+        }
+    }
+    var enabled by rememberSaveable { mutableStateOf(cylinder.reminderAt != null) }
+    var days by rememberSaveable { mutableIntStateOf(7) }
+    var date by rememberSaveable { mutableStateOf(cylinder.reminderAt ?: System.currentTimeMillis() + 7 * 86_400_000L) }
     val chooseCustom = {
         val calendar = Calendar.getInstance().apply { timeInMillis = date }
         DatePickerDialog(context, { _, year, month, day ->
@@ -314,13 +365,17 @@ private fun ReminderSheet(store: WalletStore, cylinder: Cylinder, onDismiss: () 
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf(3, 7, 14).forEach { value -> FilterChip(days == value, { days = value; date = System.currentTimeMillis() + value * 86_400_000L }, { Text("$value days") }) }; FilterChip(days == 0, chooseCustom, { Text("Custom") }) }
                 Text("Scheduled for ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(date))}.")
             }
+            if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
             Button({
                 val reminderAt = if (enabled) date else null
-                if (enabled && Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                store.setReminder(cylinder.id, reminderAt)
-                ReminderReceiver.schedule(context, cylinder, reminderAt)
-                onDismiss()
-            }, Modifier.fillMaxWidth()) { Text("Save reminder") }
+                if (enabled && date <= System.currentTimeMillis()) { error = "Choose a future date and time."; return@Button }
+                if (enabled && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    pendingDate = reminderAt; notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS); return@Button
+                }
+                val scheduled = ReminderReceiver.schedule(context, cylinder, reminderAt)
+                val saved = scheduled && store.setReminder(cylinder.id, reminderAt, entitled)
+                if (saved) onDismiss() else { if (scheduled) ReminderReceiver.schedule(context, cylinder, cylinder.reminderAt); error = store.state.value.message ?: "The change could not be saved." }
+            }, Modifier.fillMaxWidth(), enabled = !enabled || date > System.currentTimeMillis()) { Text("Save reminder") }
             Text("No account or cloud service is required.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -341,6 +396,7 @@ private fun SupplierHome(store: WalletStore, expanded: Boolean) {
     var query by rememberSaveable { mutableStateOf("") }
     var add by remember { mutableStateOf(false) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    BackHandler(enabled = selectedId != null) { selectedId = null }
     selectedId?.let { id ->
         state.suppliers.firstOrNull { it.id == id }?.let { SupplierDetail(store, it) { selectedId = null } } ?: run { selectedId = null }
         return
@@ -383,7 +439,7 @@ private fun SupplierDetail(store: WalletStore, supplier: Supplier, onBack: () ->
     }
 }
 
-@Composable private fun AddSupplierDialog(store: WalletStore, onSaved: (Supplier) -> Unit, onDismiss: () -> Unit) { var name by remember { mutableStateOf("") }; var phone by remember { mutableStateOf("") }; var notes by remember { mutableStateOf("") }; var error by remember { mutableStateOf("") }; AlertDialog(onDismissRequest = onDismiss, title = { Text("Add supplier") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error); OutlinedTextField(name, { name = it }, label = { Text("Supplier name") }); OutlinedTextField(phone, { phone = it }, label = { Text("Phone (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)); OutlinedTextField(notes, { notes = it }, label = { Text("Notes (optional)") }) } }, confirmButton = { TextButton({ store.addSupplier(name, phone, notes)?.let(onSaved) ?: run { error = if (name.isBlank()) "Enter a supplier name." else "That supplier is already saved." } }, enabled = name.isNotBlank()) { Text("Save") } }, dismissButton = { TextButton(onDismiss) { Text("Cancel") } }) }
+@Composable private fun AddSupplierDialog(store: WalletStore, onSaved: (Supplier) -> Unit, onDismiss: () -> Unit) { var name by rememberSaveable { mutableStateOf("") }; var phone by rememberSaveable { mutableStateOf("") }; var notes by rememberSaveable { mutableStateOf("") }; var error by rememberSaveable { mutableStateOf("") }; AlertDialog(onDismissRequest = onDismiss, title = { Text("Add supplier") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error); OutlinedTextField(name, { name = it }, label = { Text("Supplier name") }); OutlinedTextField(phone, { phone = it }, label = { Text("Phone (optional)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)); OutlinedTextField(notes, { notes = it }, label = { Text("Notes (optional)") }) } }, confirmButton = { TextButton({ store.addSupplier(name, phone, notes)?.let(onSaved) ?: run { error = if (name.isBlank()) "Enter a supplier name." else "That supplier is already saved." } }, enabled = name.isNotBlank()) { Text("Save") } }, dismissButton = { TextButton(onDismiss) { Text("Cancel") } }) }
 
 @Composable private fun EmptyState(title: String, message: String, icon: ImageVector) { Column(Modifier.fillMaxWidth().heightIn(min = 240.dp).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Icon(icon, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.height(12.dp)); Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
 
@@ -397,8 +453,8 @@ fun CurrencySettingsScreen(store: WalletStore) {
 @Composable
 fun WalletBackupScreen(store: WalletStore) {
     val context = LocalContext.current; var message by remember { mutableStateOf("") }
-    val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> if (uri != null) runCatching { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(store.exportJson()) } }.onSuccess { message = "Backup file created" }.onFailure { message = it.message ?: "Backup failed" } }
-    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: error("Could not read backup") }.onSuccess { store.restoreJson(it); message = "Backup restored" }.onFailure { message = it.message ?: "Restore failed" } }
+    val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> if (uri != null) runCatching { requireNotNull(context.contentResolver.openOutputStream(uri)) { "Could not open backup file" }.bufferedWriter().use { it.write(store.exportJson()) } }.onSuccess { message = "Backup file created" }.onFailure { message = it.message ?: "Backup failed" } }
+    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: error("Could not read backup") }.onSuccess { message = if (store.restoreJson(it)) "Backup restored" else "Backup contains invalid or inconsistent records" }.onFailure { message = it.message ?: "Restore failed" } }
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) { item { Icon(Icons.Outlined.Backup, null, Modifier.size(46.dp)); Text("Keep a file copy", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text("Use the system file picker to save to Google Drive, this device, or another document provider.", color = MaterialTheme.colorScheme.onSurfaceVariant) }; item { Button({ create.launch("welding-wallet-backup.json") }, Modifier.fillMaxWidth()) { Icon(Icons.Outlined.ArrowCircleUp, null); Spacer(Modifier.width(8.dp)); Text("Save backup file") } }; item { OutlinedButton({ open.launch(arrayOf("application/json")) }, Modifier.fillMaxWidth()) { Icon(Icons.Outlined.ArrowCircleDown, null); Spacer(Modifier.width(8.dp)); Text("Restore backup file") } }; if (message.isNotBlank()) item { Text(message) }; item { Row { Icon(Icons.Outlined.Lock, null); Spacer(Modifier.width(8.dp)); Text("Backup files never include purchase entitlement.") } } }
 }
 

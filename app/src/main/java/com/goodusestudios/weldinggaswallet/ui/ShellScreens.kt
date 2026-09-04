@@ -431,7 +431,7 @@ fun LanguageDialog(onDismiss: () -> Unit) {
             LazyColumn(Modifier.heightIn(max = 480.dp)) {
                 items(choices) { (tag, label) ->
                     Row(
-                        Modifier.fillMaxWidth().clickable {
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
                             androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(
                                 androidx.core.os.LocaleListCompat.forLanguageTags(tag),
                             )
@@ -462,8 +462,8 @@ fun LabScreen(
         item {
             Text("Monetization", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             MonetizationMode.entries.forEach { value ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = mode == value, onClick = { onMode(value) })
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onMode(value) }, verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = mode == value, onClick = null)
                     Text(value.readableName())
                 }
             }
@@ -471,8 +471,8 @@ fun LabScreen(
         item {
             Text("Feature state", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             SampleContentState.entries.forEach { value ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = state == value, onClick = { onState(value) })
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onState(value) }, verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = state == value, onClick = null)
                     Text(value.name)
                 }
             }
@@ -540,7 +540,7 @@ fun PaywallScreen(
         }
         if (billing.working) item { CircularProgressIndicator() }
         billing.message?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
-        if (billing.status == BillingStatus.Unavailable) {
+        if (billing.status == BillingStatus.Unavailable || billing.products.none { it.available }) {
             item { OutlinedButton(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text("Reconnect to Google Play") } }
         }
         selected?.let { product ->
@@ -559,7 +559,7 @@ fun PaywallScreen(
         item {
             Button(
                 onClick = { selected?.id?.let(onPurchase) },
-                enabled = selected?.available == true && !billing.working,
+                enabled = selected?.available == true && !billing.working && !billing.entitled,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("shell-purchase"),
             ) { Text(if (billing.entitled) "Access active" else "Continue · ${selected?.formattedPrice ?: "choose a product"}") }
         }
@@ -567,7 +567,7 @@ fun PaywallScreen(
             TextButton(
                 onClick = onRestore,
                 enabled = !billing.working,
-                modifier = Modifier.fillMaxWidth().testTag("shell-restore"),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("shell-restore"),
             ) { Text("Restore purchases") }
         }
         item {

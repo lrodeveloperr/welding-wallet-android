@@ -24,6 +24,19 @@ This is the authoritative native Android application. It derives from `lrodevelo
 - Ads/consent: `ui/AdBanner.kt`, `data/AdConsentController.kt`
 - Billing: `data/BillingController.kt`, `data/AccessPolicy.kt`
 - Validation: `scripts/validate-shell.sh`
+- Reliability audit: `docs/RELIABILITY_AUDIT.md`
+
+## Reliability and touchscreen gate
+
+- Treat every visible control as one full-surface target. Touch targets must be at least 48×48 dp; full rows must own their click/select semantics, while nested `RadioButton`/icons use `onClick = null` so taps are not split into competing regions.
+- Exercise controls through their semantics nodes in Compose UI tests, including edge taps, minimum bounds, disabled states and exactly-once callbacks. A label existing on screen is not proof that its parent control works.
+- Enforce the three-active-cylinder/free-managed policy inside `WalletStore` for add, duplicate, edit, status, service, reminder, restore and Undo. Pro expiry with excess data requires selection of three managed records; all other active records remain visible and read-only.
+- Every mutation must validate first and persist transactionally before publishing success. Use a durable write result, roll back on failure, and surface an error; never rely on fire-and-forget `SharedPreferences.apply()` for wallet records.
+- Strictly decode and validate local/backup JSON: unique IDs/serials, valid references, finite positive capacities, known units/currencies and nonnegative costs. Preserve a recovery copy of damaged local data; a malformed import must never become an empty wallet.
+- Restore must sort activity, cancel alarms for removed records and reschedule only valid active reminders. Alarm state must be rebuilt after boot, app replacement and clock/time-zone changes. Never save a past reminder or claim success when permission, scheduling or persistence fails.
+- Internal cylinder and supplier detail screens must consume system Back before the shell exits or changes top-level route. User-entered form state should use `rememberSaveable` where supported.
+- Billing connect, restore and purchase actions are single-flight. Keep at most one queued ready action, disable purchase for current owners, expose product-query failure, and make retry/restore controls full-size.
+- A reliability fix is incomplete without a store regression test and a Compose semantics test for the affected control. Run `bash scripts/validate-shell.sh`; run unit/instrumentation tests when the Android toolchain is available.
 
 ## Release control
 

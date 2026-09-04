@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -65,6 +66,12 @@ import com.goodusestudios.weldinggaswallet.wallet.WalletHelpScreen
 import com.goodusestudios.weldinggaswallet.wallet.WalletStore
 
 private enum class Route { Main, Settings, Icons, Lab, Paywall, Backup, Currency, Help, Privacy, Terms }
+
+private fun Route.backDestination(): Route = when (this) {
+    Route.Backup, Route.Currency, Route.Help, Route.Icons, Route.Lab, Route.Privacy, Route.Terms -> Route.Settings
+    Route.Main -> Route.Main
+    Route.Settings, Route.Paywall -> Route.Main
+}
 
 @Composable
 fun ShellApp(
@@ -146,7 +153,7 @@ fun ShellApp(
             OnboardingLegalDialog(onboardingDialog) { onboardingDialog = null }
         }
         ShellGate.Ready -> {
-            BackHandler(enabled = route != Route.Main) { route = Route.Main }
+            BackHandler(enabled = route != Route.Main) { route = route.backDestination() }
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val expanded = maxWidth >= 600.dp
                 val effectiveMode = if (BuildConfig.DEBUG) monetizationMode else definition.monetization.initialMode
@@ -291,7 +298,7 @@ private fun ShellScaffold(
                 title = { Text(title) },
                 navigationIcon = {
                     if (route != Route.Main) {
-                        IconButton(onClick = { onNavigate(Route.Main) }) {
+                        IconButton(onClick = { onNavigate(route.backDestination()) }) {
                             Icon(Icons.Outlined.ArrowBack, label("common.back"))
                         }
                     }
@@ -396,6 +403,7 @@ private fun ShellScaffold(
 
 private fun openUri(context: Context, uri: String) {
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri))) }
+        .onFailure { Toast.makeText(context, "No app can open this link.", Toast.LENGTH_LONG).show() }
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {

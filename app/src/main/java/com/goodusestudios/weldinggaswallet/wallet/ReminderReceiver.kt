@@ -15,6 +15,10 @@ import com.goodusestudios.weldinggaswallet.R
 
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED || intent.action == Intent.ACTION_TIME_CHANGED || intent.action == Intent.ACTION_TIMEZONE_CHANGED) {
+            WalletStore(context).rescheduleReminders()
+            return
+        }
         val id = intent.getStringExtra(EXTRA_ID) ?: return
         val gas = intent.getStringExtra(EXTRA_GAS).orEmpty().ifBlank { "cylinder" }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -42,12 +46,13 @@ class ReminderReceiver : BroadcastReceiver() {
         private const val EXTRA_ID = "cylinder-id"
         private const val EXTRA_GAS = "cylinder-gas"
 
-        fun schedule(context: Context, cylinder: Cylinder, at: Long?) {
+        fun schedule(context: Context, cylinder: Cylinder, at: Long?): Boolean {
             val intent = Intent(context, ReminderReceiver::class.java).putExtra(EXTRA_ID, cylinder.id).putExtra(EXTRA_GAS, cylinder.gas)
             val pending = PendingIntent.getBroadcast(context, cylinder.id.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val alarm = context.getSystemService(AlarmManager::class.java)
-            alarm.cancel(pending)
-            if (at != null && at > System.currentTimeMillis()) alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending)
+            if (at == null) { alarm.cancel(pending); return true }
+            if (at <= System.currentTimeMillis()) return false
+            return runCatching { alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending) }.isSuccess
         }
     }
 }
